@@ -1,0 +1,150 @@
+#!/bin/sh
+# TODO:
+# Create more built in things, for eg:
+#   - $Esp, autodetects /boot and gives path
+#   - $OS_* renamed variables from /etc/os-release
+#   - dedicated mkinitcpio and dracut functions. ideally work automatically with their existing
+#   configs and presets
+#   - UKI stuff eventually...
+# Libaplm hooks -- ideally the future built-in initramfs functions will allow you to build only the
+# needed images.
+
+set -e
+Help(){
+	cat <<- EOF
+	Usage:
+	mklimine [OPTS] [--] [ARGS]
+	ARGS are sent to mklimine config.
+
+	Options:
+	-h         print help
+	-c PATH    set mklimine config to PATH
+	-s SHELL   use SHELL instead of /bin/sh
+	-S SHELL   like -s, but allow incompatible shells
+
+	Environment:
+	MKLIMINE_CONFIG = path to mklimine config
+	EOF
+	exit 0
+}
+
+Output=/dev/stdout
+Config=${MKLIMINE_CONFIG:-/etc/mklimine.conf}
+while [ $# -gt 0 ]; do
+	case $1 in
+		--)
+			shift
+			break;;
+		-h|--help)
+			Help
+			;;
+		-s)
+			# use different shell
+			compatshells='bash dash ash ksh sh'
+			sh=$2
+			shift 2
+			for s in $compatshells; do
+				[ "$s" = "$sh" ] && exec "$sh" -- "$0" "$@"
+			done
+			echo "Compatible shells: $compatshells" >&2
+			exit 1
+			;;
+		-S)
+			# force shell
+			sh=$2
+			shift 2
+			exec "$sh" -- "$0" "$@";;
+		-c)
+			Config=$2
+			shift 2;;
+		*)
+			break;;
+	esac
+done
+[ -e "$Config" ] && [ ! -d "$Config" ] || {
+	echo "$Config" does not exist. >&2
+	exit 1
+}
+
+Exiter(){
+	return $?
+}
+
+Cleanup(){
+	s=$?
+	rm "$Fifo" "$Buffer"
+	return $s
+}
+
+Buffer=$(mktemp)
+Fifo=$(mktemp -u)
+mkfifo "$Fifo"
+trap 'Cleanup; Exiter' EXIT
+trap exit INT TERM HUP
+
+Print(){
+	printf %s\\n "$*"
+}
+
+Parse(){
+	Even=
+	<"$Buffer" awk '{
+		if (ORS == ""){
+			ORS="\n"; sub(/^\s+/, ""); print $0
+		} else {
+			if (match($0, /^\s*((\S+:)|\/+)\s*/)){
+				key=substr($0, 1, RLENGTH)
+				print "X" key "X"
+				val=substr($0, RLENGTH+1)
+				if (match(val, /\\$/)){
+					if (!sub(/\\\\/, "\\", val)){
+						ORS=""
+						val=substr(val, 1, length(val)-1)
+					}
+				}
+				print val
+			} else if ($0 ~ /^\s*$/){
+				print ORS
+			}
+		}
+	}' | while read -r Line; do
+		Line=${Line%X}
+		Line=${Line#X}
+		[ "$Even" ] && {
+			eval Print "$Line"
+			Even=
+			continue
+		}
+		Even=1
+		printf %s "$Line"
+	done >>"$Output"
+}
+
+(printf '\n1 '; awk 'BEGIN{ORS=""}
+{
+	if (sub(/^\[ \S+ \]$/, substr($0,3,length-3))){
+		print NR-1 "\n" $0 "\n" NR+1 " "
+	}
+}
+END{print NR "\n"}') <"$Config" >"$Fifo" &
+
+Even=
+while read -r Field1 Field2; do
+	[ "$Even" ] && {
+		sed -n "$Field1,$Field2"p <"$Config" >"$Buffer"
+		if [ "$Func" ]; then
+			"$Func"
+		else # first section, sh format
+			eval '
+				dummyfunc(){
+					'"$(cat "$Buffer")"'
+				}
+				dummyfunc "$@"
+			'
+		fi
+		Even=
+		continue
+	}
+	Func=$Field1
+	Even=1
+done <"$Fifo"
