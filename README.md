@@ -22,14 +22,14 @@ The text at the beginning of the file is not part of a section, and is evaluated
 on sections. This lets you set custom variables and functions.
 
 ### Pre-defined variables:
-$Output -- file that Parse() appends output to, /dev/stdout by default.
-$Buffer -- file holding the contents of the current section.
+- $Output -- file that Parse() appends output to, /dev/stdout by default.
+- $Buffer -- file holding the contents of the current section.
 
 ### Pre-defined functions:
-Parse() -- parse over $Buffer, evaluating values as shell expressions, appending to $Output.
-Print() -- same as echo, but does not interpret escape sequences.
-Cleanup() -- is run on script exit. removes temp files.
-Exiter() -- is run after Cleanup(). empty by default.
+- Parse() -- parse over $Buffer, evaluating values as shell expressions, appending to $Output.
+- Print() -- same as echo, but does not interpret escape sequences.
+- Cleanup() -- is run on script exit. removes temp files.
+- Exiter() -- is run after Cleanup(). empty by default.
 
 ### Example config:
 See [mklimine.conf](./mklimine.conf). It offers initramfs generation in addition to limine config

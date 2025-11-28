@@ -1,5 +1,5 @@
 pkgname=mklimine-git
-pkgver=r3.d07aa4f
+pkgver=r4.16922dd
 pkgrel=1
 pkgdesc="Scriptable Limine config file generator"
 arch=('any')
