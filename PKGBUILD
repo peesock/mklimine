@@ -6,7 +6,7 @@ arch=('any')
 url="https://github.com/peesock/mklimine.git"
 #url="file://$PWD"
 license=('GPL')
-depends=('sed' 'awk' 'sh')
+depends=('awk' 'sh')
 source=("${pkgname}::git+${url}")
 sha256sums=('SKIP')
 

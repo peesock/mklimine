@@ -1,0 +1,105 @@
+# vim: ft=sh
+
+# Iterates over boot files in /boot and runs Parse() or "$@" for each possible entry.
+# Created for Arch/Artix Linux.
+# VARIABLES:
+# KNAME -- like "linux-lts" or "linux-lts-fallback"
+# KFILE -- like "vmlinuz-linux-lts"
+# KVER -- like "6.17.8-arch1-1"
+# RAMFS -- like "initramfs-linux-fallback.img"
+# GUID -- guid of the /boot partition
+Archauto(){
+	Imagedir=/boot
+	GUID=$(Getuuid "$Imagedir" guid)
+	[ "$GUID" ] || unset GUID
+	for pkgbase in /usr/lib/modules/*/pkgbase; do
+		pkgname=$(cat "$pkgbase")
+		pkgversion=${pkgbase%/*}
+		pkgversion=${pkgversion##*/}
+		printf '%s %s\n' "$pkgname" "$pkgversion"
+	done | sort | while read -r KNAME KVER; do
+		knownRamfs=$(printf %s\\n \
+			"initramfs-$KNAME.img" \
+			"initramfs-$KNAME-fallback.img" \
+			"initramfs-$KVER.img" # dracut
+		)
+		KFILE=vmlinuz-$KNAME
+		[ -e "$Imagedir/$KFILE" ] || continue
+		ifs=$IFS
+		IFS=$(printf \\nx)
+		IFS=${IFS%x}
+		for RAMFS in $knownRamfs; do
+			[ -e "$Imagedir/$RAMFS" ] || {
+				unset RAMFS
+				continue
+			}
+			break
+		done
+		IFS=$ifs
+		[ "$RAMFS" ] || {
+			echo "Archauto: initramfs not found, skipping config for $KNAME"
+			continue
+		}
+		printf %s "$knownRamfs" | Sort "$SortPatterns" | while read -r RAMFS; do
+			[ -e "$Imagedir/$RAMFS" ] || continue
+			[ "$RAMFS" != "${RAMFS#*-fallback}" ] && KNAME=$KNAME-fallback
+			"${@:-Parse}"
+		done
+	done
+}
+
+# Sorts and filters lines in order of extended regex arguments
+# ARGS: REGEX...
+Sort(){
+	sort | PATTERNS=$(printf %s\\n "$@") awk '
+	BEGIN {
+		split(ENVIRON["PATTERNS"], regArr, /\n/)
+		for (i in regArr)
+			if (regArr[i] == "") delete regArr[i]
+	}
+	{
+		arr1[NR] = $0
+	}
+	END {
+		n1=NR; n2=1; n3=1
+		for (i in regArr){
+			for (n=1; n<=n1; n++){
+				if (arr1[n] ~ regArr[i]){
+					arr2[n2++] = arr1[n]
+				} else {
+					arr3[n3++] = arr1[n]
+				}
+			}
+			n1=0
+			for (n=1; n<n3; n++) { arr1[++n1] = arr3[n] }
+			for (n=1; n<n2; n++) { arr1[++n1] = arr2[n] }
+			n2=1; n3=1
+		}
+		for (n in arr1) print arr1[n]
+	}'
+}
+
+# Get uuid (default) or guid/partuuid of a path.
+# ARGS: PATH [guid | partuuid]
+Getuuid(){
+	opt=uuid
+	case ${2-} in guid|partuuid) opt=partuuid;; esac
+	arr=$(findmnt -o "$opt,source" -T "$1" --json | jq ".filesystems")
+	out=$(Print "$arr" | jq -r ".[].$opt")
+	if [ "$out" = null ]; then
+		# try udev
+		out=
+		dev=$(Print "$arr" | jq -r ".[].source")
+		for link in /dev/disk/by-"$opt"/*; do
+			[ "$(realpath "$link")" = "$dev" ] && out=${link##*/} && break
+		done
+	fi
+	Print "$out"
+}
+
+# Newline delimited extended regex patterns, for use in pre-defined functions that use Sort()
+SortPatterns='
+.*
+.*lts
+.*fallback
+'

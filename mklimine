@@ -1,15 +1,14 @@
 #!/bin/sh
 # TODO:
 # Create more built in things, for eg:
-#   - $Esp, autodetects /boot and gives path
-#   - $OS_* renamed variables from /etc/os-release
+#   - limine blake hashes
 #   - dedicated mkinitcpio and dracut functions. ideally work automatically with their existing
 #   configs and presets
 #   - UKI stuff eventually...
 # Libaplm hooks -- ideally the future built-in initramfs functions will allow you to build only the
 # needed images.
 
-set -e
+set -eu
 Help(){
 	cat <<- EOF
 	Usage:
@@ -66,22 +65,6 @@ done
 	exit 1
 }
 
-Exiter(){
-	return $?
-}
-
-Cleanup(){
-	s=$?
-	rm "$Fifo" "$Buffer"
-	return $s
-}
-
-Buffer=$(mktemp)
-Fifo=$(mktemp -u)
-mkfifo "$Fifo"
-trap 'Cleanup; Exiter' EXIT
-trap exit INT TERM HUP
-
 Print(){
 	printf %s\\n "$*"
 }
@@ -110,19 +93,81 @@ Parse(){
 	}' | while read -r Line; do
 		Line=${Line%X}
 		Line=${Line#X}
-		[ "$Even" ] && {
+		[ "${Even-}" ] && {
 			eval Print "$Line"
 			Even=
 			continue
 		}
 		Even=1
 		printf %s "$Line"
-	done >>"$Output"
+	done >>"$TempOutput"
 }
+
+Exiter(){
+	Status=$?
+	for func in $ExitFuncs; do
+		"$func"
+	done
+	return $Status
+}
+
+Cleanup(){
+	rm "$Fifo" "$Buffer" "$TempOutput"
+}
+
+Write(){
+	if [ -f "$Output" ] || [ ! -e "$Output" ]; then
+		if [ "$Status" -eq 0 ]; then
+			# See if output is actually different from the existing file
+			if diff -q -- "$TempOutput" "$Output" >/dev/null 2>&1; then
+				echo "No difference in config :)" >&2
+			else
+				# Make backup
+				[ -e "$Output" ] && mv "$Output" "$Output.old"
+				cat < "$TempOutput" > "$Output"
+				echo "Config created :)" >&2
+			fi
+		else
+			echo "Error detected. Not updating $Output" >&2
+		fi
+	elif [ ! -d "$Output" ]; then # special file (like stdout)
+		cat < "$TempOutput" > "$Output"
+	else
+		echo "$Output is a directory." >&2
+		return 1
+	fi
+}
+
+TempOutput=$(mktemp)
+Buffer=$(mktemp)
+Fifo=$(mktemp -u)
+mkfifo "$Fifo"
+ExitFuncs='Write Cleanup'
+trap 'Exiter' EXIT
+trap exit INT TERM HUP
+
+# set OS_* variables
+while read -r line; do
+	eval "OS_$line"
+done < /etc/os-release
+
+# attempt to set $ESP variable
+while true; do
+	ESP=$(lsblk -o mountpoint,parttypename --json --tree |
+		jq -r '.blockdevices.[] | ., .children.[] |
+		select(.parttypename | select(. != null) | test("^efi"; "i")).mountpoint')
+	[ "$ESP" ] && break
+	for dir in efi EFI boot; do
+		[ -d "/$dir" ] && ESP=/$dir && break 2
+	done
+	unset ESP
+	break
+done
 
 (printf '\n1 '; awk 'BEGIN{ORS=""}
 {
-	if (sub(/^\[ \S+ \]$/, substr($0,3,length-3))){
+	if ($0 ~ /^\s*\[ \S.* \]\s*(#.*)?$/){
+		gsub(/(^\s*\[ )|( \]\s*(#.*)?$)/, "")
 		print NR-1 "\n" $0 "\n" NR+1 " "
 	}
 }
@@ -131,10 +176,11 @@ END{print NR "\n"}') <"$Config" >"$Fifo" &
 Even=
 while read -r Field1 Field2; do
 	[ "$Even" ] && {
-		sed -n "$Field1,$Field2"p <"$Config" >"$Buffer"
-		if [ "$Func" ]; then
-			"$Func"
-		else # first section, sh format
+		awk '{if (NR > '"$Field2"') exit; if (NR >= '"$Field1"') print $0}' <"$Config" >"$Buffer"
+		if [ "${Exec-}" ]; then
+			eval "$Exec"
+		else
+			# first section
 			eval '
 				dummyfunc(){
 					'"$(cat "$Buffer")"'
@@ -145,6 +191,6 @@ while read -r Field1 Field2; do
 		Even=
 		continue
 	}
-	Func=$Field1
+	Exec=$Field1
 	Even=1
 done <"$Fifo"
