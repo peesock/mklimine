@@ -7,6 +7,8 @@
 # KFILE -- like "vmlinuz-linux-lts"
 # KVER -- like "6.17.8-arch1-1"
 # RAMFS -- like "initramfs-linux-fallback.img"
+# KHASH -- blake2 checksum of kernel image
+# RHASH -- blake2 checksum of initramfs
 # GUID -- guid of the /boot partition
 Archauto(){
 	Imagedir=/boot
@@ -42,6 +44,10 @@ Archauto(){
 		}
 		printf %s "$knownRamfs" | Sort "$SortPatterns" | while read -r RAMFS; do
 			[ -e "$Imagedir/$RAMFS" ] || continue
+			KHASH=$(b2sum -- "$Imagedir/$KFILE")
+			RHASH=$(b2sum -- "$Imagedir/$RAMFS")
+			KHASH=${KHASH%% *}
+			RHASH=${RHASH%% *}
 			[ "$RAMFS" != "${RAMFS#*-fallback}" ] && KNAME=$KNAME-fallback
 			"${@:-Parse}"
 		done

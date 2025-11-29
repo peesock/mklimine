@@ -1,12 +1,10 @@
 #!/bin/sh
 # TODO:
+# For each section, function stdout is sent to an isolated tmpfile, and only appended to $Output if
+# there were no errors. Removes the need for a global set -e.
 # Create more built in things, for eg:
-#   - limine blake hashes
-#   - dedicated mkinitcpio and dracut functions. ideally work automatically with their existing
-#   configs and presets
 #   - UKI stuff eventually...
-# Libaplm hooks -- ideally the future built-in initramfs functions will allow you to build only the
-# needed images.
+# Libaplm hooks.
 
 set -eu
 Help(){
