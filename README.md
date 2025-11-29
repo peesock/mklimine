@@ -8,55 +8,73 @@ Create a file at /etc/mklimine.conf and fill it in according to the file format.
 
 Then run `mklimine` with any arguments wanted by your config.
 
-## File Format
+## Config Format
 
 ### Sections:
-"Sections" are function names surrounded by \[ brackets \] that contain text until the next section.
-For each section, the $Buffer file is set to the contents of that section, and the function
-represented by the section name is executed.
+"Sections" are shell commands surrounded by `[ brackets ]` on their own line that indicate the
+following chunk of text to be processed. For example:
+```sh
+[ Parse ]
+timeout: 3
+default_entry: 2
+```
 
-The most useful function is Parse(), which parses $Buffer according to the Limine config format,
-but evaluates values as shell expressions, allowing for dynamic config creation.
+The most useful command is Parse(), which parses the buffer according to the Limine config format,
+evaluating values as shell expressions.
 
 The text at the beginning of the file is not part of a section, and is evaluated before operating
-on sections. This lets you set custom variables and functions.
+on sections. This lets you set custom variables and functions:
+```sh
+getTimeout(){
+    shuf -i 1-10 -n 1
+}
+ENTRY=2
+[ Parse ]
+timeout: "$(getTimeout)"
+default_entry: $ENTRY
+```
+
+The processed output from each section is combined into a single file, limine.conf.
 
 ### Pre-defined variables:
-- $Output -- file that Parse() appends output to, /dev/stdout by default.
+- $Output -- output file, /dev/stdout by default.
 - $Buffer -- file holding the contents of the current section.
+- $ESP -- directory for system boot partition
+- $OS_* -- variables from /etc/os-release, prepended with "OS_".
 
 ### Pre-defined functions:
 - Parse() -- parse over $Buffer, evaluating values as shell expressions, appending to $Output.
 - Print() -- same as echo, but does not interpret escape sequences.
-- Cleanup() -- is run on script exit. removes temp files.
-- Exiter() -- is run after Cleanup(). empty by default.
 
-### Example config:
-See [mklimine.conf](./mklimine.conf). It offers initramfs generation in addition to limine config
-creation.
+### Extra:
+See [extra-functions](./extra-functions).
 
-## Project Status and Usability
+## Example
 
-This probably isn't "user-friendly." It currently has no built-in functions for typical mkinitcpio
-and dracut usage, likely requiring the user to know some shell scripting to adapt the example config
-to their own system.
+See [mklimine.conf](./mklimine.conf).
 
-However if you do know shell scripting, mklimine becomes a very simple and powerful tool for
-generating arbitrarily complex limine config files.
+## Usability
 
-The core logic of mklimine is only about 70 lines of shell and awk script, only really doing 4
-things:
+This probably isn't "user-friendly" since it requires that you know at least a little shell
+scripting. But a simple limine.conf is already easy to make, so this project is aimed more at
+advanced users anyway.
+
+If you do know shell scripting, mklimine is a very powerful tool for generating arbitrarily complex
+config files.
+
+## Internals
+
+The core logic of mklimine is only about 70 lines of shell and awk script, doing about 4 things:
 - Evaluate/Source beginning of file as shell code
-- Find text that follows `[ Section ]` syntax
+- Find text that follows `[ section ]` syntax
 - Put following text into a buffer named by the $Buffer variable
-- Execute a function with $Buffer available in scope
+- Run section command with $Buffer available in scope
 
-Parsing limine-style config files does not come into question. That is handled by a pre-defined
-function Parse() separate from the core program.
+The Parse() function is not involved, except where used in mklimine.conf.
 
 For that reason i might split this project into the core section processor with modular sets of
-parsers. Think a limine parser, an fstab parser, a mangowc config parser, etc. Any format that would
-benefit from dynamic generation. The section syntax would also be modular, to avoid conflicts with
-other file types.
+parsers. Think a limine parser, a rEFInd parser, an fstab parser, a mangowc config parser, or any
+format that would benefit from dynamic generation. The section syntax would also be modular, to
+avoid conflicts with other file types.
 
-But i'm only doing that if i actually want to use this for something other than Limine.
+But right now i just use it for Limine.
