@@ -14,12 +14,22 @@ Archauto(){
 	Imagedir=/boot
 	GUID=$(Getuuid "$Imagedir" guid)
 	[ "$GUID" ] || unset GUID
+	prevname=
+	prevver=
+	i=0
 	for pkgbase in /usr/lib/modules/*/pkgbase; do
 		pkgname=$(cat "$pkgbase")
 		pkgversion=${pkgbase%/*}
 		pkgversion=${pkgversion##*/}
 		printf '%s %s\n' "$pkgname" "$pkgversion"
-	done | sort | while read -r KNAME KVER; do
+	done | (sort -n; echo) | while read -r KNAME KVER; do
+		[ $i -gt 0 ] && [ "$prevname" != "$KNAME" ] && {
+			printf '%s %s\n' "$prevname" "$prevver"
+		}
+		i=$((i + 1))
+		prevname=$KNAME
+		prevver=$KVER
+	done | while read -r KNAME KVER; do
 		knownRamfs=$(printf %s\\n \
 			"initramfs-$KNAME.img" \
 			"initramfs-$KNAME-fallback.img" \
