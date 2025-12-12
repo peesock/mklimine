@@ -49,7 +49,7 @@ Archauto(){
 		done
 		IFS=$ifs
 		[ "$RAMFS" ] || {
-			echo "Archauto: initramfs not found, skipping config for $KNAME"
+			echo "Archauto: initramfs not found, skipping config for $KNAME" >&2
 			continue
 		}
 		printf %s "$knownRamfs" | Sort "$SortPatterns" | while read -r RAMFS; do

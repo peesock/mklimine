@@ -1,12 +1,9 @@
 #!/bin/sh
 # TODO:
-# For each section, function stdout is sent to an isolated tmpfile, and only appended to $Output if
-# there were no errors. Removes the need for a global set -e.
 # Create more built in things, for eg:
 #   - UKI stuff eventually...
 # Libaplm hooks.
 
-set -eu
 Help(){
 	cat <<- EOF
 	Usage:
@@ -91,14 +88,14 @@ Parse(){
 	}' | while read -r Line; do
 		Line=${Line%X}
 		Line=${Line#X}
-		[ "${Even-}" ] && {
+		[ "$Even" ] && {
 			eval Print "$Line"
 			Even=
 			continue
 		}
 		Even=1
 		printf %s "$Line"
-	done >>"$TempOutput"
+	done
 }
 
 Exiter(){
@@ -110,7 +107,7 @@ Exiter(){
 }
 
 Cleanup(){
-	rm "$Fifo" "$Buffer" "$TempOutput"
+	rm "$Fifo" "$Buffer" "$TempOutput" "$SectionOutput"
 }
 
 Write(){
@@ -136,6 +133,7 @@ Write(){
 	fi
 }
 
+SectionOutput=$(mktemp)
 TempOutput=$(mktemp)
 Buffer=$(mktemp)
 Fifo=$(mktemp -u)
@@ -171,12 +169,21 @@ done
 }
 END{print NR "\n"}') <"$Config" >"$Fifo" &
 
-Even=
+Num=0
+SectNum=1
+Exec=
 while read -r Field1 Field2; do
-	[ "$Even" ] && {
+	Num=$((Num + 1))
+	if [ $((Num % 2)) -eq 0 ]; then
 		awk '{if (NR > '"$Field2"') exit; if (NR >= '"$Field1"') print $0}' <"$Config" >"$Buffer"
-		if [ "${Exec-}" ]; then
-			eval "$Exec"
+		if [ "$Exec" ]; then
+			(set -eu; eval "$Exec" >"$SectionOutput")
+			if [ "$?" -eq 0 ]; then # even inside the subshell, putting the command inside an "if" will disable the set -e.
+				cat < "$SectionOutput" >>"$TempOutput"
+			else
+				echo "mklimine: section $SectNum: '$Exec' failed" >&2
+			fi
+			SectNum=$((SectNum + 1))
 		else
 			# first section
 			eval '
@@ -186,9 +193,9 @@ while read -r Field1 Field2; do
 				dummyfunc "$@"
 			'
 		fi
-		Even=
 		continue
-	}
-	Exec=$Field1
-	Even=1
+	else
+		Exec="$Field1 $Field2"
+		Exec=${Exec% }
+	fi
 done <"$Fifo"
