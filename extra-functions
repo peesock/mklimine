@@ -22,7 +22,7 @@ Archauto(){
 		pkgversion=${pkgbase%/*}
 		pkgversion=${pkgversion##*/}
 		printf '%s %s\n' "$pkgname" "$pkgversion"
-	done | (sort -n; echo) | while read -r KNAME KVER; do
+	done | (sort -V; echo) | while read -r KNAME KVER; do
 		[ $i -gt 0 ] && [ "$prevname" != "$KNAME" ] && {
 			printf '%s %s\n' "$prevname" "$prevver"
 		}
