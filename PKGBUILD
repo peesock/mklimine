@@ -18,4 +18,5 @@ pkgver() {
 package() {
 	cd "${pkgname}"
 	make PREFIX=/usr DESTDIR="${pkgdir}"
+	install -CD -m0644 ./91-mkinitcpio-mklimine.hook "$pkgdir"/usr/share/libalpm/hooks/91-mkinitcpio-mklimine.hook
 }
